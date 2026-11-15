@@ -1183,7 +1183,17 @@ async function applyDocumentUpdate({
       "Editing the customer is blocked for this status.",
     );
   }
-  if (kind === "order" && wantsAddressChange) {
+  const customerChangeClearsAddresses =
+    input.customerEntityId !== undefined &&
+    (input.customerEntityId?.toLowerCase() ?? null) !==
+      (entity.customerEntityId?.toLowerCase() ?? null) &&
+    Boolean(
+      entity.billingAddressId ||
+        entity.shippingAddressId ||
+        entity.billingAddressSnapshot ||
+        entity.shippingAddressSnapshot,
+    );
+  if (kind === "order" && (wantsAddressChange || customerChangeClearsAddresses)) {
     guardStatus(
       settings?.orderAddressEditableStatuses ?? null,
       "sales.orders.edit_addresses_blocked",
