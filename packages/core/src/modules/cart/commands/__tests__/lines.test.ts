@@ -1419,9 +1419,12 @@ describe('cart promotions + totals recompute (Step 8.2, QA F12)', () => {
     expect(seededCarts[0].totals).toMatchObject({ discountTotalAmount: 0, grandTotalNetAmount: 10, grandTotalGrossAmount: 12 })
   })
 
+  function makeVisibleScopeCtxLoader() {
+    return jest.fn(async () => new Map([['product-1', { id: 'product-1', categoryIds: ['cat-a'], tagIds: [], isActive: true }]]))
+  }
+
   function makeVisibleScopeCtx() {
-    const loadScopedProducts = jest.fn(async () => new Map([['product-1', { id: 'product-1', categoryIds: ['cat-a'], tagIds: [], isActive: true }]]))
-    return makeCtx({ em: makeEm(), catalogScopedProductService: { loadScopedProducts } })
+    return makeCtx({ em: makeEm(), catalogScopedProductService: { loadScopedProducts: makeVisibleScopeCtxLoader() } })
   }
 
   it('cart.lines.update clears a stale product_unavailable flag on a line it accepted and counts it in Cart.totals', async () => {
@@ -1580,5 +1583,88 @@ describe('cart promotions + totals recompute (Step 8.2, QA F12)', () => {
 
     expect(seededCartLines[0].deletedAt).toBeNull()
     expect(seededCarts[0].totals.grandTotalNetAmount).toBe(10)
+  })
+
+  type UndoSnapshotPayload = { undo: { before: Record<string, unknown>; after: Record<string, unknown> } }
+  type BuiltLogEntry = Record<string, unknown> & { payload: UndoSnapshotPayload }
+
+  function toUndoLogEntry(logEntry: BuiltLogEntry): CommandUndoLogEntry {
+    return { ...logEntry, commandPayload: logEntry.payload } as unknown as CommandUndoLogEntry
+  }
+
+  async function buildUndoLogEntry<I, R>(handler: CommandHandler<I, R>, result: R, ctx: CommandRuntimeContext): Promise<BuiltLogEntry> {
+    return (await handler.buildLog!({ input: {} as I, result, ctx, snapshots: {} })) as unknown as BuiltLogEntry
+  }
+
+  it('undo of a merging cart.lines.add restores the product_unavailable flag it cleared and drops the line from Cart.totals', async () => {
+    seededCartLines = [makeBareLine({ quantity: '2', flagState: 'product_unavailable' })]
+    const handler = getHandler<CartLinesAddInput, CartLinesAddOutcome>('cart.lines.add')
+    const ctx = makeCtx({ em: makeEm(), commandBus: makeRealDispatchingCommandBus(), catalogScopedProductService: { loadScopedProducts: makeVisibleScopeCtxLoader() } })
+
+    const result = await handler.execute(
+      { tenantId: TENANT_ID, organizationId: ORG_ID, cartId: CART_ID, productId: 'product-1', quantity: 3, addedByActorType: 'rep', assortmentScope: [{ categoryIds: ['cat-a'] }] },
+      ctx,
+    )
+    expect(result.status).toBe('merged')
+    expect(seededCartLines[0].flagState).toBeNull()
+    expect(seededCarts[0].totals).toMatchObject({ grandTotalNetAmount: 50 })
+
+    const logEntry = await buildUndoLogEntry(handler, result, ctx)
+    await handler.undo!({ input: {} as CartLinesAddInput & CartLinesBulkAddInput, ctx, logEntry: toUndoLogEntry(logEntry) })
+
+    expect(seededCartLines[0].quantity).toBe('2')
+    expect(seededCartLines[0].flagState).toBe('product_unavailable')
+    expect(seededCarts[0].totals).toMatchObject({ grandTotalNetAmount: 0, grandTotalGrossAmount: 0 })
+  })
+
+  it('undo of a merging cart.lines.bulkAdd restores the product_unavailable flag it cleared and drops the line from Cart.totals', async () => {
+    seededCartLines = [makeBareLine({ quantity: '2', flagState: 'product_unavailable' })]
+    const handler = getHandler<CartLinesBulkAddInput, CartLinesBulkAddResult>('cart.lines.bulkAdd')
+    const ctx = makeCtx({ em: makeEm(), commandBus: makeRealDispatchingCommandBus(), catalogScopedProductService: { loadScopedProducts: makeVisibleScopeCtxLoader() } })
+
+    const result = await handler.execute(
+      {
+        tenantId: TENANT_ID,
+        organizationId: ORG_ID,
+        cartId: CART_ID,
+        addedByActorType: 'rep',
+        assortmentScope: [{ categoryIds: ['cat-a'] }],
+        lines: [{ productId: 'product-1', quantity: 3 }],
+      },
+      ctx,
+    )
+    expect(seededCartLines[0].flagState).toBeNull()
+    expect(seededCarts[0].totals).toMatchObject({ grandTotalNetAmount: 50 })
+
+    const logEntry = await buildUndoLogEntry(handler, result, ctx)
+    await handler.undo!({ input: {} as CartLinesAddInput & CartLinesBulkAddInput, ctx, logEntry: toUndoLogEntry(logEntry) })
+
+    expect(seededCartLines[0].quantity).toBe('2')
+    expect(seededCartLines[0].flagState).toBe('product_unavailable')
+    expect(seededCarts[0].totals).toMatchObject({ grandTotalNetAmount: 0, grandTotalGrossAmount: 0 })
+  })
+
+  it('undo of cart.lines.add from a snapshot recorded without flagState still restores the line and leaves its current flag alone', async () => {
+    seededCartLines = [makeBareLine({ quantity: '2', flagState: null })]
+    const handler = getHandler<CartLinesAddInput, CartLinesAddOutcome>('cart.lines.add')
+    const ctx = makeCtx({ em: makeEm(), commandBus: makeRealDispatchingCommandBus() })
+
+    const result = await handler.execute(
+      { tenantId: TENANT_ID, organizationId: ORG_ID, cartId: CART_ID, productId: 'product-1', quantity: 3, addedByActorType: 'rep' },
+      ctx,
+    )
+    expect(result.status).toBe('merged')
+    const logEntry = await buildUndoLogEntry(handler, result, ctx)
+    const legacyBefore = { ...logEntry.payload.undo.before }
+    const legacyAfter = { ...logEntry.payload.undo.after }
+    delete legacyBefore.flagState
+    delete legacyAfter.flagState
+    const legacyLogEntry: BuiltLogEntry = { ...logEntry, payload: { undo: { before: legacyBefore, after: legacyAfter } } }
+
+    await handler.undo!({ input: {} as CartLinesAddInput, ctx, logEntry: toUndoLogEntry(legacyLogEntry) })
+
+    expect(seededCartLines[0].quantity).toBe('2')
+    expect(seededCartLines[0].flagState).toBeNull()
+    expect(seededCarts[0].totals).toMatchObject({ grandTotalNetAmount: 20 })
   })
 })

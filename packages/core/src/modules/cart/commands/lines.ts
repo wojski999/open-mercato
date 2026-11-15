@@ -50,7 +50,7 @@ import type { SalesCalculationService } from '@open-mercato/core/modules/sales/s
 import type { SalesAdjustmentDraft } from '@open-mercato/core/modules/sales/lib/types'
 
 import { Cart, CartLine } from '../data/entities'
-import type { CartChannel, CartLineActorType, CartLineOrigin } from '../data/entities'
+import type { CartChannel, CartLineActorType, CartLineFlagState, CartLineOrigin } from '../data/entities'
 import {
   cartVisibilityKey,
   evaluateCartVisibility,
@@ -571,6 +571,7 @@ export type CartLineSnapshot = {
   discountTotalNet: string | null
   promotionId: string | null
   origin: CartLineOrigin
+  flagState?: CartLineFlagState | null
   configuration: Record<string, unknown> | null
   addedByActorType: CartLineActorType
   addedByActorId: string | null
@@ -610,6 +611,7 @@ export function toCartLineSnapshot(line: CartLine): CartLineSnapshot {
     discountTotalNet: line.discountTotalNet ?? null,
     promotionId: line.promotionId ?? null,
     origin: line.origin,
+    flagState: line.flagState ?? null,
     configuration: line.configuration ?? null,
     addedByActorType: line.addedByActorType,
     addedByActorId: line.addedByActorId ?? null,
@@ -1136,6 +1138,7 @@ function restoreLineFromSnapshot(line: CartLine, snapshot: CartLineSnapshot): vo
   line.pricedAt = snapshot.pricedAt
   line.lineTotals = snapshot.lineTotals
   line.discountTotalNet = snapshot.discountTotalNet
+  if (snapshot.flagState !== undefined) line.flagState = snapshot.flagState
   line.deletedAt = snapshot.deletedAt
 }
 
