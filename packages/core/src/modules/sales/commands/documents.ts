@@ -4773,6 +4773,12 @@ async function restoreOrderGraph(
       existingLines,
       snapshot,
     );
+    if (
+      isCancelledOrderStatus(snapshot.order.status) &&
+      !isCancelledOrderStatus(order.status)
+    ) {
+      await assertOrderCanBeCancelled(em, order);
+    }
   }
   if (!order) {
     order = em.create(SalesOrder, {
