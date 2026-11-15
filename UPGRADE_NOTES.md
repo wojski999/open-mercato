@@ -1,5 +1,14 @@
 # Upgrade Notes
 
+## `cart` no longer requires `customer_groups` (#9189)
+
+`cart` now declares `requires: ['catalog', 'sales', 'promotions']`. It never used
+`customer_groups` at runtime, so behavior is unchanged when both modules are enabled. Apps
+that pass `yarn generate` today are not newly rejected, and no action is needed unless your
+app relied on `cart` to force `customer_groups` on; enable it explicitly in `src/modules.ts`
+in that case. No API, schema or configuration change. See
+[module dependencies](apps/docs/docs/architecture/module-dependencies.mdx).
+
 ## EUDR update undo conflicts (#9128)
 
 Update undos for EUDR plots, risk assessments, product mappings, mitigation actions,
