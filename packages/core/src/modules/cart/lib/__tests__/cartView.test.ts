@@ -365,6 +365,15 @@ describe('buildCartResponseEnvelope', () => {
     expect(warning?.message).not.toContain('[internal]')
   })
 
+  it('keeps the internal flagState off a flagged line view', async () => {
+    seededCartLines = [makeLineFixture({ id: 'line-1', flagState: 'product_unavailable' })]
+    const container = makeContainer()
+    const envelope = await buildCartResponseEnvelope({ container, cartId: CART_ID, tenantId: TENANT_ID, organizationId: ORG_ID })
+
+    expect(envelope.cart.lines[0].id).toBe('line-1')
+    expect(envelope.cart.lines[0]).not.toHaveProperty('flagState')
+  })
+
   // TC-CART-TOT-02 (§3.2 "the cart stores the returned totals verbatim. It does not round,
   // re-sum or adjust them"). `buildCartResponseEnvelope` never imports/resolves
   // `salesCalculationService` at all (confirmed by reading `cartView.ts`) — `envelope.cart.totals`

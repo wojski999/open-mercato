@@ -220,7 +220,14 @@ export type CartLineNextTierView = {
   saving: string
 }
 
-export type CartLineView = CartLineSnapshot & {
+export type CartLinePublicSnapshot = Omit<CartLineSnapshot, 'flagState'>
+
+export function toPublicCartLineSnapshot(snapshot: CartLineSnapshot): CartLinePublicSnapshot {
+  const { flagState: _flagState, ...publicSnapshot } = snapshot
+  return publicSnapshot
+}
+
+export type CartLineView = CartLinePublicSnapshot & {
   nextTier: CartLineNextTierView | null
   availabilityState: CartLineAvailabilityView
 }
@@ -522,7 +529,7 @@ export async function buildCartResponseEnvelope(params: BuildCartResponseEnvelop
     }
     const availabilityKey = availabilityItemKey({ catalogProductId: line.productId, catalogVariantId: line.variantId ?? null })
     const availabilityState = toCartLineAvailability(availabilityResult.byItem[availabilityKey] ?? null)
-    lineViews.push({ ...toCartLineSnapshot(line), nextTier, availabilityState })
+    lineViews.push({ ...toPublicCartLineSnapshot(toCartLineSnapshot(line)), nextTier, availabilityState })
   }
 
   const lineCount = lineViews.length

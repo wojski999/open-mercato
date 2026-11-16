@@ -21,7 +21,7 @@ import {
   resolveCurrentCart,
   resolveRouteContextOrError,
 } from '../../../../lib/currentCartRoute'
-import { buildCartResponseEnvelope } from '../../../../lib/cartView'
+import { buildCartResponseEnvelope, toPublicCartLineSnapshot } from '../../../../lib/cartView'
 import type { CartViewWarning } from '../../../../lib/cartView'
 import { resolveCartWarningMessage } from '../../../../lib/warningMessages'
 import {
@@ -158,7 +158,15 @@ export async function POST(request: Request) {
       versionBumpReason: contextVersionBumpReason,
       warnings,
     })
-    const responseBody: Record<string, unknown> = { ...envelope, outcome: result }
+    const outcome = {
+      ...result,
+      results: result.results.map((entry) =>
+        entry.status === 'rejected'
+          ? entry
+          : { ...entry, line: toPublicCartLineSnapshot(entry.line), before: entry.before ? toPublicCartLineSnapshot(entry.before) : null },
+      ),
+    }
+    const responseBody: Record<string, unknown> = { ...envelope, outcome }
     if (idempotencyKey) {
       await recordIdempotencyResponse(em, scope, cart.id, idempotencyKey, requestDigest, BULK_ADD_STATUS, responseBody)
     }

@@ -43,6 +43,10 @@ jest.mock('../idempotency', () => ({
   findIdempotencyReplay: async () => null,
   recordIdempotencyResponse: (...args: unknown[]) => recordResponse(...args),
 }))
+jest.mock('../cartView', () => ({
+  ...jest.requireActual('../cartView'),
+  buildCartResponseEnvelope: async () => ({ cart: { id: 'cart-a' } }),
+}))
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -88,4 +92,23 @@ it.each([['add', addLine], ['bulk add', bulkAddLines]] as const)('%s leaves a mu
   expect(manager.rollback).toHaveBeenCalledTimes(1)
   expect(runAfterSuccess).not.toHaveBeenCalled()
   expect(recordResponse).not.toHaveBeenCalled()
+})
+
+it('bulk add keeps the internal flagState off the per-entry line snapshots it returns', async () => {
+  const snapshot = { id: 'line-1', cartId: 'cart-a', tenantId: 'tenant-a', organizationId: 'org-a', quantity: '5' }
+  executeCommand.mockResolvedValue({
+    result: {
+      results: [{ index: 0, status: 'merged', line: { ...snapshot, flagState: null }, before: { ...snapshot, quantity: '2', flagState: 'product_unavailable' }, warnings: [] }],
+      addedCount: 1,
+      rejectedCount: 0,
+    },
+  })
+  const body = { lines: [{ productId: 'f47ac10b-58cc-4372-a567-0e02b2c3d479', quantity: '3' }] }
+  const response = await bulkAddLines(new Request('https://example.test/api/cart/current/lines/bulk', { method: 'POST', body: JSON.stringify(body) }))
+  expect(response.status).toBe(200)
+  const payload = (await response.json()) as { outcome: { results: Array<{ line: Record<string, unknown>; before: Record<string, unknown> }> } }
+  expect(payload.outcome.results[0].line).toEqual(snapshot)
+  expect(payload.outcome.results[0].before).toEqual({ ...snapshot, quantity: '2' })
+  expect(payload.outcome.results[0].line).not.toHaveProperty('flagState')
+  expect(payload.outcome.results[0].before).not.toHaveProperty('flagState')
 })
