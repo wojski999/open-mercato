@@ -505,7 +505,7 @@ const priceBaseSchema = scoped.extend({
 // the stored record here (same limitation the GTIN cross-field check documents
 // above: zod cannot see the merged state, only the command layer can).
 const priceQuantityRangeRefinement = (
-  input: { minQuantity?: number; maxQuantity?: number },
+  input: { minQuantity?: number | null; maxQuantity?: number | null },
   ctx: z.RefinementCtx,
 ) => {
   if (
@@ -522,7 +522,7 @@ const priceQuantityRangeRefinement = (
 }
 
 const priceValidityWindowRefinement = (
-  input: { startsAt?: Date; endsAt?: Date },
+  input: { startsAt?: Date | null; endsAt?: Date | null },
   ctx: z.RefinementCtx,
 ) => {
   if (input.startsAt && input.endsAt && input.endsAt < input.startsAt) {
@@ -543,6 +543,11 @@ export const priceUpdateSchema = z
     id: uuid(),
   })
   .merge(priceBaseSchema.partial())
+  .extend({
+    maxQuantity: z.coerce.number().int().min(1).nullable().optional(),
+    startsAt: z.coerce.date().nullable().optional(),
+    endsAt: z.coerce.date().nullable().optional(),
+  })
   .superRefine(priceQuantityRangeRefinement)
   .superRefine(priceValidityWindowRefinement)
 

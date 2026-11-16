@@ -88,6 +88,40 @@ describe('price cross-field validators', () => {
   })
 })
 
+describe('price update schema clears optional bounds', () => {
+  const priceId = '66666666-6666-4666-8666-666666666666'
+
+  it('keeps an explicit null maxQuantity as a clear instead of rejecting it', () => {
+    const result = priceUpdateSchema.safeParse({ id: priceId, maxQuantity: null })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveProperty('maxQuantity', null)
+    }
+  })
+
+  it.each(['startsAt', 'endsAt'] as const)('keeps an explicit null %s instead of coercing it to the epoch', (field) => {
+    const result = priceUpdateSchema.safeParse({ id: priceId, [field]: null })
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data).toHaveProperty(field, null)
+    }
+  })
+
+  it('still validates the range when only one side is cleared', () => {
+    expect(
+      priceUpdateSchema.safeParse({ id: priceId, minQuantity: 10, maxQuantity: null, endsAt: null }).success,
+    ).toBe(true)
+    expect(priceUpdateSchema.safeParse({ id: priceId, maxQuantity: 0 }).success).toBe(false)
+  })
+
+  it('leaves omitted bounds out of a partial update', () => {
+    const parsed = priceUpdateSchema.parse({ id: priceId, unitPriceNet: '12.50' })
+    expect(parsed).not.toHaveProperty('maxQuantity')
+    expect(parsed).not.toHaveProperty('startsAt')
+    expect(parsed).not.toHaveProperty('endsAt')
+  })
+})
+
 describe('price kind update schema', () => {
   const priceKindId = '77777777-7777-4777-8777-777777777777'
 

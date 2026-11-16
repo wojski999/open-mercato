@@ -218,6 +218,34 @@ describe('catalog price update resolves the amount to recalculate from', () => {
   })
 })
 
+describe('catalog price update clears optional bounds sent as null', () => {
+  const helpers = jest.requireMock('@open-mercato/shared/lib/commands/helpers') as Record<string, jest.Mock>
+  const { priceUpdateSchema } = jest.requireActual('../../data/validators') as typeof import('../../data/validators')
+
+  beforeEach(() => {
+    helpers.parseWithCustomFields.mockImplementationOnce((_schema: unknown, raw: unknown) => ({
+      parsed: priceUpdateSchema.parse(raw),
+      custom: {},
+    }))
+  })
+
+  it('clears maxQuantity, startsAt and endsAt through the real update schema', async () => {
+    const { record } = await runUpdate(
+      { maxQuantity: null, startsAt: null, endsAt: null },
+      {
+        minQuantity: 5,
+        maxQuantity: 20,
+        startsAt: new Date('2026-11-01T00:00:00.000Z'),
+        endsAt: new Date('2027-01-31T00:00:00.000Z'),
+      },
+    )
+    expect(record.maxQuantity).toBeNull()
+    expect(record.startsAt).toBeNull()
+    expect(record.endsAt).toBeNull()
+    expect(record.minQuantity).toBe(5)
+  })
+})
+
 describe('catalog price update resolves the scope when relations load lazily', () => {
   const scopeGuards = jest.requireActual('@open-mercato/shared/lib/commands/scope')
   const sharedMocks = jest.requireMock('../shared') as Record<string, jest.Mock>

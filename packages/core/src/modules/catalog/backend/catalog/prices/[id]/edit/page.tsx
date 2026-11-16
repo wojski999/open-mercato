@@ -5,12 +5,12 @@ import { Page, PageBody } from '@open-mercato/ui/backend/Page'
 import { CrudForm } from '@open-mercato/ui/backend/CrudForm'
 import { apiCall } from '@open-mercato/ui/backend/utils/apiCall'
 import { updateCrud, deleteCrud } from '@open-mercato/ui/backend/utils/crud'
-import { createCrudFormError } from '@open-mercato/ui/backend/utils/serverErrors'
 import { ErrorMessage, RecordNotFoundState } from '@open-mercato/ui/backend/detail'
 import { useT } from '@open-mercato/shared/lib/i18n/context'
 import { E } from '#generated/entities.ids.generated'
 import { usePriceFormFields, type PriceFormValues } from '../../../../../components/prices/priceFormFields'
 import { normalizePriceRecord } from '../../../../../components/prices/normalizePriceRecord'
+import { buildPriceUpdatePayload } from '../../../../../components/prices/priceUpdatePayload'
 
 type PriceListResponse = {
   items?: Array<Record<string, unknown>>
@@ -21,39 +21,6 @@ function toDateInputValue(value: string | null | undefined): string {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return ''
   return date.toISOString().slice(0, 10)
-}
-
-function buildUpdatePayload(
-  id: string,
-  values: PriceFormValues,
-  t: (key: string, fallback?: string) => string,
-): Record<string, unknown> {
-  const productId = values.productId?.trim() || undefined
-  const variantId = values.variantId?.trim() || undefined
-  if (!productId && !variantId) {
-    const message = t('catalog.prices.form.errors.productOrVariantRequired', 'Choose a product or a variant.')
-    throw createCrudFormError(message, { productId: message })
-  }
-  return {
-    id,
-    productId,
-    variantId,
-    priceKindId: values.priceKindId?.trim() || undefined,
-    currencyCode: values.currencyCode?.trim() || undefined,
-    unitPriceNet: values.unitPriceNet?.trim() || undefined,
-    unitPriceGross: values.unitPriceGross?.trim() || undefined,
-    taxRate: values.taxRate?.trim() || undefined,
-    minQuantity: values.minQuantity ?? undefined,
-    maxQuantity: values.maxQuantity ?? undefined,
-    startsAt: values.startsAt?.trim() || undefined,
-    endsAt: values.endsAt?.trim() || undefined,
-    customerId: values.customerId?.trim() || undefined,
-    customerGroupId: values.customerGroupId?.trim() || undefined,
-    channelId: values.channelId?.trim() || undefined,
-    offerId: values.offerId?.trim() || undefined,
-    userId: values.userId?.trim() || undefined,
-    userGroupId: values.userGroupId?.trim() || undefined,
-  }
 }
 
 export default function EditCatalogPricePage({ params }: { params?: { id?: string } }) {
@@ -182,7 +149,7 @@ export default function EditCatalogPricePage({ params }: { params?: { id?: strin
           cancelHref="/backend/catalog/prices"
           successRedirect={`/backend/catalog/prices?flash=${encodeURIComponent(t('catalog.prices.flash.updated', 'Price rule updated'))}&type=success`}
           onSubmit={async (values) => {
-            const payload = buildUpdatePayload(priceId, values, t)
+            const payload = buildPriceUpdatePayload(priceId, values, t)
             await updateCrud('catalog/prices', payload)
           }}
           onDelete={async () => {
