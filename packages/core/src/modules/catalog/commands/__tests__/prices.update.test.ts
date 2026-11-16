@@ -1,4 +1,4 @@
-export {}
+import { z } from 'zod'
 
 const registerCommand = jest.fn()
 
@@ -384,5 +384,89 @@ describe('catalog price commands when the sales module is disabled', () => {
       status: 400,
       body: { error: 'Tax classes are not available.' },
     })
+  })
+})
+
+describe('catalog price update validates the merged quantity range and validity window', () => {
+  const STORED_STARTS_AT = new Date('2026-12-01T00:00:00.000Z')
+
+  async function runMergedUpdate(input: Row, recordOverrides: Row) {
+    const record = buildPriceRecord(recordOverrides)
+    findOneWithDecryption.mockResolvedValue(record)
+    const { ctx, commandEm } = buildContext()
+    const outcome = updateCommand().execute({ id: PRICE_ID, ...input }, ctx)
+    return { record, commandEm, outcome }
+  }
+
+  function expectValidationIssue(error: unknown, path: string, message: string) {
+    expect(error).toBeInstanceOf(z.ZodError)
+    expect((error as z.ZodError).issues).toEqual([
+      expect.objectContaining({ path: [path], message }),
+    ])
+  }
+
+  it('rejects a maxQuantity below the stored minQuantity before flushing', async () => {
+    const { record, commandEm, outcome } = await runMergedUpdate({ maxQuantity: 2 }, { minQuantity: 10 })
+    const error = await outcome.catch((err: unknown) => err)
+    expectValidationIssue(error, 'maxQuantity', 'catalog.prices.validation.quantityRange')
+    expect(record.maxQuantity).toBeNull()
+    expect(commandEm.flush).not.toHaveBeenCalled()
+  })
+
+  it('rejects a minQuantity above the stored maxQuantity', async () => {
+    const { commandEm, outcome } = await runMergedUpdate({ minQuantity: 20 }, { minQuantity: 1, maxQuantity: 5 })
+    const error = await outcome.catch((err: unknown) => err)
+    expectValidationIssue(error, 'maxQuantity', 'catalog.prices.validation.quantityRange')
+    expect(commandEm.flush).not.toHaveBeenCalled()
+  })
+
+  it('rejects an endsAt before the stored startsAt before flushing', async () => {
+    const { record, commandEm, outcome } = await runMergedUpdate(
+      { endsAt: new Date('2026-11-20T00:00:00.000Z') },
+      { startsAt: STORED_STARTS_AT },
+    )
+    const error = await outcome.catch((err: unknown) => err)
+    expectValidationIssue(error, 'endsAt', 'catalog.prices.validation.validityWindow')
+    expect(record.endsAt).toBeNull()
+    expect(commandEm.flush).not.toHaveBeenCalled()
+  })
+
+  it('rejects a startsAt after the stored endsAt', async () => {
+    const { outcome } = await runMergedUpdate(
+      { startsAt: new Date('2027-02-01T00:00:00.000Z') },
+      { startsAt: STORED_STARTS_AT, endsAt: new Date('2027-01-01T00:00:00.000Z') },
+    )
+    const error = await outcome.catch((err: unknown) => err)
+    expectValidationIssue(error, 'endsAt', 'catalog.prices.validation.validityWindow')
+  })
+
+  it('accepts a partial update that keeps the merged range consistent', async () => {
+    const { record, commandEm, outcome } = await runMergedUpdate(
+      { maxQuantity: 50, endsAt: new Date('2027-01-01T00:00:00.000Z') },
+      { minQuantity: 10, startsAt: STORED_STARTS_AT },
+    )
+    await outcome
+    expect(record.maxQuantity).toBe(50)
+    expect(record.endsAt).toEqual(new Date('2027-01-01T00:00:00.000Z'))
+    expect(commandEm.flush).toHaveBeenCalled()
+  })
+
+  it('does not re-validate ranges the patch leaves untouched', async () => {
+    const { record, outcome } = await runMergedUpdate(
+      { unitPriceNet: 200 },
+      { minQuantity: 10, maxQuantity: 2, startsAt: STORED_STARTS_AT, endsAt: new Date('2026-11-20T00:00:00.000Z') },
+    )
+    await outcome
+    expect(record.unitPriceNet).toBe('200')
+  })
+
+  it('accepts clearing the upper bounds of an existing range', async () => {
+    const { record, outcome } = await runMergedUpdate(
+      { maxQuantity: null, endsAt: null },
+      { minQuantity: 10, maxQuantity: 20, startsAt: STORED_STARTS_AT, endsAt: new Date('2027-01-01T00:00:00.000Z') },
+    )
+    await outcome
+    expect(record.maxQuantity).toBeNull()
+    expect(record.endsAt).toBeNull()
   })
 })

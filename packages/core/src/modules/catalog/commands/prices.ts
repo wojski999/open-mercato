@@ -10,6 +10,7 @@ import { E } from '#generated/entities.ids.generated'
 import {
   priceCreateSchema,
   priceUpdateSchema,
+  priceMergedRangeSchema,
   type PriceCreateInput,
   type PriceUpdateInput,
 } from '../data/validators'
@@ -548,6 +549,7 @@ const updatePriceCommand: CommandHandler<PriceUpdateInput, { priceId: string }> 
       { tenantId: parsed.tenantId, organizationId: parsed.organizationId },
     )
     if (!record) throw new CrudHttpError(404, { error: 'Catalog price not found' })
+    priceMergedRangeSchema.parse(resolveMergedPriceRanges(parsed, record))
     const recordScope = { tenantId: record.tenantId, organizationId: record.organizationId }
     const currentVariantRef = record.variant
     let targetVariant: CatalogProductVariant | null = null
@@ -999,6 +1001,27 @@ const deletePriceCommand: CommandHandler<
       })
     }
   },
+}
+
+function resolveMergedPriceRanges(parsed: PriceUpdateInput, record: CatalogProductPrice) {
+  const hasStartsAt = Object.prototype.hasOwnProperty.call(parsed, 'startsAt')
+  const hasEndsAt = Object.prototype.hasOwnProperty.call(parsed, 'endsAt')
+  const touchesQuantity = parsed.minQuantity !== undefined || parsed.maxQuantity !== undefined
+  const touchesWindow = hasStartsAt || hasEndsAt
+  return {
+    ...(touchesQuantity
+      ? {
+          minQuantity: parsed.minQuantity !== undefined ? parsed.minQuantity ?? 1 : record.minQuantity,
+          maxQuantity: parsed.maxQuantity !== undefined ? parsed.maxQuantity ?? null : record.maxQuantity ?? null,
+        }
+      : {}),
+    ...(touchesWindow
+      ? {
+          startsAt: hasStartsAt ? parsed.startsAt ?? null : record.startsAt ?? null,
+          endsAt: hasEndsAt ? parsed.endsAt ?? null : record.endsAt ?? null,
+        }
+      : {}),
+  }
 }
 
 registerCommand(createPriceCommand)
