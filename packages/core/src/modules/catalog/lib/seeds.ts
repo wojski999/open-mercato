@@ -85,14 +85,7 @@ export async function seedCatalogPriceKinds(
       continue
     }
     const def = defaultsByCode.get(key)
-    if (!def) {
-      if (record.deletedAt == null) {
-        record.deletedAt = now
-        record.isActive = false
-        record.updatedAt = now
-      }
-      continue
-    }
+    if (!def) continue
     record.organizationId = targetOrganizationId
     record.title = def.title
     record.displayMode = def.displayMode ?? 'including-tax'
