@@ -863,7 +863,10 @@ const updatePaymentCommand: CommandHandler<
       'sales.payments.not_found'
     )
     ensureSameScope(payment, resolvedOrganizationId, resolvedTenantId)
-    if (input.amount !== undefined || input.capturedAmount !== undefined || input.refundedAmount !== undefined) {
+    const amountsChanged = (['amount', 'capturedAmount', 'refundedAmount'] as const).some(
+      (key) => input[key] !== undefined && toNumber(input[key]) !== toNumber(payment[key]),
+    )
+    if (amountsChanged) {
       assertPaymentAmountsWithinBounds(
         {
           amount: input.amount !== undefined ? input.amount : payment.amount,

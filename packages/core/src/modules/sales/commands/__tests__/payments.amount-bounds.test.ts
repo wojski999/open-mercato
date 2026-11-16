@@ -224,4 +224,18 @@ describe('sales.payments.update — amount bounds against stored values', () => 
     await runUpdate(stored, { refundedAmount: 80 })
     expect(stored.refundedAmount).toBe('80')
   })
+
+  it('accepts an unrelated edit of a legacy over-refunded payment that resends the same amounts', async () => {
+    const stored = buildStoredPayment({ amount: '50', capturedAmount: '50', refundedAmount: '400' })
+    await runUpdate(stored, { amount: 50, paymentReference: 'legacy-ref-updated' })
+    expect(stored.paymentReference).toBe('legacy-ref-updated')
+    expect(stored.refundedAmount).toBe('400')
+  })
+
+  it('still rejects an amount change on a legacy over-refunded payment', async () => {
+    const stored = buildStoredPayment({ amount: '50', capturedAmount: '50', refundedAmount: '400' })
+    const error = await captureError(() => runUpdate(stored, { amount: 40 }))
+    expectBadRequest(error, CAPTURE_ERROR_KEY)
+    expect(stored.amount).toBe('50')
+  })
 })
