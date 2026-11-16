@@ -95,6 +95,28 @@ const toNumber = (value: unknown): number => {
   return 0
 }
 
+type PaymentAmountBounds = { amount: unknown; capturedAmount: unknown; refundedAmount: unknown }
+
+const assertPaymentAmountsWithinBounds = (
+  amounts: PaymentAmountBounds,
+  translate: (key: string, fallback?: string) => string,
+): void => {
+  const amount = toNumber(amounts.amount)
+  const captured = toNumber(amounts.capturedAmount)
+  const refunded = toNumber(amounts.refundedAmount)
+  if (captured > amount) {
+    throw new CrudHttpError(400, {
+      error: translate('sales.payments.captured_exceeds_amount', 'Captured amount cannot exceed the payment amount.'),
+    })
+  }
+  const paid = captured > 0 ? captured : amount
+  if (refunded > paid) {
+    throw new CrudHttpError(400, {
+      error: translate('sales.payments.refunded_exceeds_paid', 'Refunded amount cannot exceed the captured or paid amount.'),
+    })
+  }
+}
+
 const normalizeCustomFieldsInput = (input: unknown): Record<string, unknown> =>
   input && typeof input === 'object' && !Array.isArray(input) ? (input as Record<string, unknown>) : {}
 
@@ -467,6 +489,7 @@ const createPaymentCommand: CommandHandler<
     if (!input.orderId) {
       throw new CrudHttpError(400, { error: translate('sales.payments.order_required', 'Order is required for payments.') })
     }
+    assertPaymentAmountsWithinBounds(input, translate)
 
     const scope: PaymentScope = { tenantId: input.tenantId, organizationId: input.organizationId }
     const allocationInputs = Array.isArray(input.allocations) ? input.allocations : []
@@ -840,6 +863,16 @@ const updatePaymentCommand: CommandHandler<
       'sales.payments.not_found'
     )
     ensureSameScope(payment, resolvedOrganizationId, resolvedTenantId)
+    if (input.amount !== undefined || input.capturedAmount !== undefined || input.refundedAmount !== undefined) {
+      assertPaymentAmountsWithinBounds(
+        {
+          amount: input.amount !== undefined ? input.amount : payment.amount,
+          capturedAmount: input.capturedAmount !== undefined ? input.capturedAmount : payment.capturedAmount,
+          refundedAmount: input.refundedAmount !== undefined ? input.refundedAmount : payment.refundedAmount,
+        },
+        translate,
+      )
+    }
     const previousOrder = payment.order as SalesOrder | null
     // Guard the parent order's aggregate version (Gap A): updating a payment
     // recalculates the order totals, so a stale parent must 409 before mutating.
